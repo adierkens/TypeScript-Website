@@ -44,23 +44,83 @@ it("runs a virtual environment and gets the right results from the LSP", () => {
   `)
 })
 
+const getAllFileNames = (
+  fileName: string,
+  fsMap: Map<string, string>,
+  compilerOpts: ts.CompilerOptions,
+  system: ts.System
+) => {
+  const files = [fileName]
+  const content = fsMap.get(fileName)
+
+  if (!content) {
+    return files
+  }
+
+  // Preprocess source file for imports
+  const seen: string[] = []
+  let { importedFiles } = ts.preProcessFile(content, true)
+
+  for (const module of importedFiles) {
+    if (seen.includes(module.fileName)) {
+      continue
+    }
+
+    const resolutionInfo = ts.resolveModuleName(module.fileName, fileName, compilerOpts, system)
+    seen.push(module.fileName)
+
+    if (resolutionInfo.resolvedModule) {
+      files.push(resolutionInfo.resolvedModule.resolvedFileName)
+      // Process imports of imports
+      const importContent = fsMap.get(resolutionInfo.resolvedModule.resolvedFileName)
+
+      if (importContent) {
+        ts.preProcessFile(importContent, true).importedFiles.map(f => importedFiles.push(f))
+      }
+    }
+  }
+
+  return files
+}
+
 it("runs can use a FS backed system", () => {
   const compilerOpts: ts.CompilerOptions = { target: ts.ScriptTarget.ES2016, esModuleInterop: true }
   const fsMap = createDefaultMapFromNodeModules(compilerOpts)
   addAllFilesFromFolder(fsMap, path.resolve(path.join(__dirname, "../../../node_modules/@types")))
 
-  const content = `import * as path from 'path';\npath.`
-  fsMap.set("index.ts", content)
+  const fileName = "index.ts"
+  const content = `import * as pkg from './foo';\npkg.`
+  fsMap.set(fileName, content)
+
+  const fileName2 = "foo.ts"
+  const content2 = `export * from './bar';`
+  fsMap.set(fileName2, content2)
+
+  const fileName3 = "bar.ts"
+  const content3 = `export const bar = 123;`
+  fsMap.set(fileName3, content3)
 
   const system = createFSBackedSystem(fsMap)
-  const env = createVirtualTypeScriptEnvironment(
-    system,
-    ["/node_modules/@types/node/path.d.ts", "index.ts"],
-    ts,
-    compilerOpts
-  )
+  const files = getAllFileNames(fileName, fsMap, compilerOpts, system)
+  const env = createVirtualTypeScriptEnvironment(system, files, ts, compilerOpts)
+  const completions = env.languageService.getCompletionsAtPosition(fileName, content.length, {})
 
-  const completions = env.languageService.getCompletionsAtPosition("index.ts", content.length, {})
+  expect(completions).toMatchSnapshot()
+})
+
+it.only("runs can use a FS backed system - node", () => {
+  const compilerOpts: ts.CompilerOptions = { target: ts.ScriptTarget.ES2016, esModuleInterop: true }
+  const fsMap = createDefaultMapFromNodeModules(compilerOpts)
+  addAllFilesFromFolder(fsMap, path.resolve(path.join(__dirname, "../../../node_modules/@types")))
+
+  const fileName = "index.ts"
+  const content = `import * as path from 'path';\npath.`
+  fsMap.set(fileName, content)
+
+  const system = createFSBackedSystem(fsMap)
+  const files = getAllFileNames(fileName, fsMap, compilerOpts, system)
+  const env = createVirtualTypeScriptEnvironment(system, files, ts, compilerOpts)
+  const completions = env.languageService.getCompletionsAtPosition(fileName, content.length, {})
 
   expect(completions).toMatchSnapshot()
 })

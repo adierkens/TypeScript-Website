@@ -68,11 +68,11 @@ export function createVirtualTypeScriptEnvironment(
         prevFullContents.slice(prevTextSpan.start + prevTextSpan.length)
       const newSourceFile = ts.updateSourceFile(prevSourceFile, newText, {
         span: prevTextSpan,
-        newLength: content.length
+        newLength: content.length,
       })
 
       updateFile(newSourceFile)
-    }
+    },
   }
 }
 
@@ -142,7 +142,7 @@ export const knownLibFilesForCompilerOptions = (compilerOptions: CompilerOptions
     "lib.esnext.d.ts",
     "lib.esnext.full.d.ts",
     "lib.esnext.intl.d.ts",
-    "lib.esnext.symbol.d.ts"
+    "lib.esnext.symbol.d.ts",
   ]
 
   const targetToCut = ts.ScriptTarget[target]
@@ -196,10 +196,10 @@ export const addAllFilesFromFolder = (map: Map<string, string>, workingDir: stri
   const path = require("path")
   const fs = require("fs")
 
-  const walk = function(dir: string) {
+  const walk = function (dir: string) {
     let results: string[] = []
     const list = fs.readdirSync(dir)
-    list.forEach(function(file: string) {
+    list.forEach(function (file: string) {
       file = path.join(dir, file)
       const stat = fs.statSync(file)
       if (stat && stat.isDirectory()) {
@@ -216,7 +216,7 @@ export const addAllFilesFromFolder = (map: Map<string, string>, workingDir: stri
   const allFiles = walk(workingDir)
 
   allFiles.forEach(lib => {
-    const fsPath = "/node_modules/@types" + lib.replace(workingDir, "")
+    const fsPath = "/" + lib
     const content = fs.readFileSync(lib, "utf8")
     const validExtensions = [".ts", ".tsx"]
 
@@ -343,7 +343,7 @@ const defaultCompilerOptions = (ts: typeof import("typescript")): CompilerOption
     suppressOutputPathCheck: true,
     skipLibCheck: true,
     skipDefaultLibCheck: true,
-    moduleResolution: ts.ModuleResolutionKind.NodeJs
+    moduleResolution: ts.ModuleResolutionKind.NodeJs,
   }
 }
 
@@ -416,6 +416,47 @@ export function createFSBackedSystem(files: Map<string, string>): System {
   }
 }
 
+export function getAllFileNames(
+  fileName: string,
+  fsMap: Map<string, string>,
+  compilerOpts: CompilerOptions,
+  system: System
+) {
+  const rootFile = fileName.startsWith("node_") ? `/${fileName}` : fileName
+  const ts = require("typescript") as TS
+  const files = [rootFile]
+  const content = fsMap.get(fileName)
+
+  if (!content) {
+    return files
+  }
+
+  // Preprocess source file for imports
+  const seen: string[] = []
+  let { importedFiles } = ts.preProcessFile(content, true)
+
+  for (const module of importedFiles) {
+    if (seen.includes(module.fileName)) {
+      continue
+    }
+
+    const resolutionInfo = ts.resolveModuleName(module.fileName, rootFile, compilerOpts, system)
+    seen.push(module.fileName)
+
+    if (resolutionInfo.resolvedModule) {
+      files.push(resolutionInfo.resolvedModule.resolvedFileName)
+      // Process imports of imports
+      const importContent = fsMap.get(resolutionInfo.resolvedModule.resolvedFileName)
+
+      if (importContent) {
+        ts.preProcessFile(importContent, true).importedFiles.map(f => importedFiles.push(f))
+      }
+    }
+  }
+
+  return files
+}
+
 /**
  * Creates an in-memory CompilerHost -which is essentially an extra wrapper to System
  * which works with TypeScript objects - returns both a compiler host, and a way to add new SourceFile
@@ -454,14 +495,14 @@ export function createVirtualCompilerHost(sys: System, compilerOptions: Compiler
           )
         )
       },
-      useCaseSensitiveFileNames: () => sys.useCaseSensitiveFileNames
+      useCaseSensitiveFileNames: () => sys.useCaseSensitiveFileNames,
     },
     updateFile: sourceFile => {
       const alreadyExists = sourceFiles.has(sourceFile.fileName)
       sys.writeFile(sourceFile.fileName, sourceFile.text)
       sourceFiles.set(sourceFile.fileName, sourceFile)
       return alreadyExists
-    }
+    },
   }
   return vHost
 }
@@ -494,7 +535,7 @@ export function createVirtualLanguageServiceHost(
     getScriptVersion: fileName => {
       return fileVersions.get(fileName) || "0"
     },
-    writeFile: sys.writeFile
+    writeFile: sys.writeFile,
   }
 
   type Return = {
@@ -511,7 +552,7 @@ export function createVirtualLanguageServiceHost(
         fileNames.push(sourceFile.fileName)
       }
       updateFile(sourceFile)
-    }
+    },
   }
   return lsHost
 }
