@@ -228,7 +228,7 @@ export const addAllFilesFromFolder = (map: Map<string, string>, workingDir: stri
 
 /** Adds all files from node_modules/@types into the FS Map */
 export const addFilesForTypesIntoFolder = (map: Map<string, string>) =>
-  addAllFilesFromFolder(map, "node_modules/@types")
+  addAllFilesFromFolder(map, "../../node_modules/@types")
 
 /**
  * Create a virtual FS Map with the lib files from a particular TypeScript
